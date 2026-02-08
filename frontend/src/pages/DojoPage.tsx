@@ -2,8 +2,10 @@ import { useParams } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { GameWebSocket, type ChatMessage, type BattleState } from '../services/GameWebSocket';
-import { motion, AnimatePresence } from 'motion/react';
 import { BattleScene } from '../components/BattleComponents';
+import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
+import { parseEther, parseAbi } from 'viem';
+import { api } from '../lib/utils';
 
 // Mock colors for avatars
 const AVATAR_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD'];
@@ -14,16 +16,104 @@ type DojoPlayer = {
     color: string;
 };
 
+const CONTRACT_ADDRESS = "0x3B3aB1A308F352a43b1d10a2a0Fd4B81AF2C7413";
+const CONTRACT_ABI = parseAbi([
+    "function deposit() external payable"
+]);
+
 function DojoPage() {
     const { dojoName, roomId } = useParams();
     const { token } = useAuth();
+    const { isConnected } = useAccount();
     const wsRef = useRef<GameWebSocket | null>(null);
+    const [myId, setMyId] = useState<string | null>(null);
     
+    // Betting State
+    const { writeContractAsync, isPending: isBetting } = useWriteContract();
+    const [betTxHash, setBetTxHash] = useState<string | null>(null);
+    const { isSuccess: isBetConfirmed } = useWaitForTransactionReceipt({ hash: betTxHash as `0x${string}` });
+
     const [players, setPlayers] = useState<DojoPlayer[]>([]);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [inputMessage, setInputMessage] = useState('');
-    const [myId, setMyId] = useState<string | null>(null);
     const [battleState, setBattleState] = useState<BattleState | null>(null);
+    const [totalPool, setTotalPool] = useState<string>('0');
+
+    // Track active bet attempt to sync with backend after confirmation
+    const [pendingBetChoice, setPendingBetChoice] = useState<'playerA' | 'playerB' | null>(null);
+    const [pendingBetAmount, setPendingBetAmount] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (isBetConfirmed && betTxHash && pendingBetChoice && roomId && token && pendingBetAmount) {
+            console.log("Bet confirmed on-chain! Notifying backend...");
+            
+            api.placeBet(roomId, pendingBetChoice, pendingBetAmount, betTxHash, token)
+            .then(data => {
+                console.log("Backend confirmed bet:", data);
+                if (data.success) {
+                    alert(`Bet placed on ${pendingBetChoice === 'playerA' ? 'Red' : 'Blue'}!`);
+                    // Refresh pool balance
+                    fetchPoolBalance();
+                } else {
+                    alert(`Bet failed: ${data.error}`);
+                }
+                setPendingBetChoice(null);
+                setPendingBetAmount(null);
+                setBetTxHash(null);
+            })
+            .catch(err => {
+                console.error("Failed to notify backend of bet:", err);
+                alert("Failed to register bet with backend");
+            });
+        }
+    }, [isBetConfirmed, betTxHash, pendingBetChoice, roomId, token, pendingBetAmount]);
+
+    const fetchPoolBalance = async () => {
+        try {
+            const result = await api.getTotalPool();
+            if (result.success) {
+                setTotalPool(result.total);
+            }
+        } catch (e) {
+            console.error('Failed to fetch pool balance:', e);
+        }
+    };
+
+    // Fetch pool balance on mount and every 10 seconds
+    useEffect(() => {
+        fetchPoolBalance();
+        const interval = setInterval(fetchPoolBalance, 10000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const handlePlaceBet = async (choice: 'playerA' | 'playerB') => {
+        if (!isConnected) {
+            alert("Please connect your wallet first!");
+            return;
+        }
+
+        const amount = prompt("Enter bet amount in MON:", "0.1");
+        if (!amount || isNaN(Number(amount))) return;
+
+        try {
+            const weiAmount = parseEther(amount);
+            const hash = await writeContractAsync({
+                address: CONTRACT_ADDRESS,
+                abi: CONTRACT_ABI,
+                functionName: 'deposit',
+                value: weiAmount
+            });
+            
+            console.log("Bet Tx Sent:", hash);
+            setBetTxHash(hash);
+            setPendingBetChoice(choice);
+            setPendingBetAmount(weiAmount.toString());
+
+        } catch (e) {
+            console.error("Betting failed:", e);
+            alert("Failed to place bet. Check console.");
+        }
+    };
 
     useEffect(() => {
         if (!token || !roomId) return;
@@ -114,36 +204,44 @@ function DojoPage() {
 
                 {/* Betting Bar */}
                 <div className="h-24 border-t border-gray-800 bg-[#111] p-4 flex items-center justify-between gap-4">
-                    <div className="flex-1 flex items-center justify-between bg-[#0a0a0a] border border-gray-800 rounded-xl p-3 hover:border-blue-500/30 transition-colors cursor-pointer group">
+                    <div className="flex-1 flex items-center justify-between bg-[#0a0a0a] border border-gray-800 rounded-xl p-3 hover:border-red-500/30 transition-colors cursor-pointer group">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/20">A</div>
+                            <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-red-500/20">A</div>
                             <div>
-                                <h3 className="text-sm font-bold text-gray-200 group-hover:text-blue-400 transition-colors">
+                                <h3 className="text-sm font-bold text-gray-200 group-hover:text-red-400 transition-colors">
                                     {battleState ? battleState.playerA.name : 'Agent Red'}
                                 </h3>
                             </div>
                         </div>
-                        <button className="px-4 py-2 rounded-lg bg-blue-600/10 text-blue-400 border border-blue-600/20 text-xs font-bold uppercase hover:bg-blue-600 hover:text-white transition-all">
-                            Bet {battleState ? battleState.playerA.name.split(' ')[0] : 'Red'}
+                        <button 
+                            onClick={() => handlePlaceBet('playerA')}
+                            disabled={isBetting}
+                            className="px-4 py-2 rounded-lg bg-red-600/10 text-red-400 border border-red-600/20 text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all disabled:opacity-50"
+                        >
+                            {isBetting && pendingBetChoice === 'playerA' ? 'Betting...' : `Bet ${battleState ? battleState.playerA.name.split(' ')[0] : 'Red'}`}
                         </button>
                     </div>
 
                     <div className="flex flex-col items-center">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">VS</span>
-                        <span className="text-[10px] text-gray-600 mt-1">Total Pool: $0</span>
+                        <span className="text-[10px] text-gray-600 mt-1">Total Pool: {totalPool} MON</span>
                     </div>
 
-                    <div className="flex-1 flex items-center justify-between bg-[#0a0a0a] border border-gray-800 rounded-xl p-3 hover:border-red-500/30 transition-colors cursor-pointer group">
+                    <div className="flex-1 flex items-center justify-between bg-[#0a0a0a] border border-gray-800 rounded-xl p-3 hover:border-blue-500/30 transition-colors cursor-pointer group">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-red-500/20">B</div>
+                            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/20">B</div>
                             <div>
-                                <h3 className="text-sm font-bold text-gray-200 group-hover:text-red-400 transition-colors">
+                                <h3 className="text-sm font-bold text-gray-200 group-hover:text-blue-400 transition-colors">
                                     {battleState ? battleState.playerB.name : 'Agent Blue'}
                                 </h3>
                             </div>
                         </div>
-                        <button className="px-4 py-2 rounded-lg bg-red-600/10 text-red-400 border border-red-600/20 text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all">
-                            Bet {battleState ? battleState.playerB.name.split(' ')[0] : 'Blue'}
+                        <button 
+                            onClick={() => handlePlaceBet('playerB')}
+                            disabled={isBetting}
+                            className="px-4 py-2 rounded-lg bg-blue-600/10 text-blue-400 border border-blue-600/20 text-xs font-bold uppercase hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
+                        >
+                            {isBetting && pendingBetChoice === 'playerB' ? 'Betting...' : `Bet ${battleState ? battleState.playerB.name.split(' ')[0] : 'Blue'}`}
                         </button>
                     </div>
                 </div>

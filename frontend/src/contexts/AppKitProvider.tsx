@@ -1,7 +1,6 @@
-import { wagmiAdapter, projectId } from "@/config/wagmi";
+import { wagmiAdapter, projectId, monadTestnet } from "@/config/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createAppKit } from "@reown/appkit/react";
-import { monad } from "@reown/appkit/networks";
 import { type ReactNode } from "react";
 import { WagmiProvider } from "wagmi";
 
@@ -19,8 +18,8 @@ if (projectId) {
   createAppKit({
     adapters: [wagmiAdapter],
     projectId,
-    networks: [monad],
-    defaultNetwork: monad,
+    networks: [monadTestnet as any],
+    defaultNetwork: monadTestnet as any,
     metadata: metadata,
     features: {
       analytics: true,
