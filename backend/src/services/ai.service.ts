@@ -31,7 +31,7 @@ export class AIService {
         // Initialize Gemini with the selected key
         // We use gemini-1.5-flash as 2.5 is not a valid model ID yet
         const genAI = new GoogleGenerativeAI(currentKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         try {
             const availableMoves = attacker.moves.filter(m => (attacker.cooldowns[m.name] || 0) === 0);

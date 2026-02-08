@@ -4,6 +4,7 @@ import { openapi, fromTypes } from '@elysiajs/openapi'
 import { cors } from '@elysiajs/cors'
 import { authRoutes } from './routes/auth.routes'
 import { gameRoutes } from './routes/game.routes'
+import { betRoutes } from './routes/bet.routes'
 import { AutoBattlerByRoom } from './services/battle.service'
 
 export const app = new Elysia()
@@ -18,6 +19,7 @@ export const app = new Elysia()
 	)
 	.use(authRoutes)
 	.use(gameRoutes)
+	.use(betRoutes)
 	.use(
 		await staticPlugin({
 			prefix: '/'

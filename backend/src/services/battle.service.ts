@@ -1,6 +1,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { AIService } from './ai.service';
+import { BettingService } from './betting.service';
 
 // ==========================================
 // TYPE DEFINITIONS
@@ -547,11 +548,18 @@ export class AutoBattlerByRoom {
         }
     }
 
-    private endBattle(winnerId: string) {
+    private async endBattle(winnerId: string) {
         this.state.winner = winnerId;
         this.state.phase = 'finished';
         this.state.log.push(`Battle Finished! ${winnerId === 'playerA' ? this.state.playerA.name : this.state.playerB.name} wins!`);
         this.broadcast();
+
+        // Distribute Winnings
+        try {
+            await BettingService.distributeWinnings(this.state.id, winnerId as 'playerA' | 'playerB');
+        } catch (e) {
+            console.error("Payout error:", e);
+        }
 
         // Restart after 1 minute (60 seconds)
         console.log(`Battle ${this.state.id} finished. Restarting in 60s...`);
