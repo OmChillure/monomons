@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS __drizzle_migrations CASCADE;
