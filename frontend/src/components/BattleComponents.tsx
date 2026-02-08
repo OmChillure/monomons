@@ -1,8 +1,21 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect } from 'react';
 import type { BattlePokemon, BattleState } from '../services/GameWebSocket';
 
 export const PokemonCard = ({ pokemon, isActive, isOpponent }: { pokemon: BattlePokemon; isActive: boolean; isOpponent?: boolean }) => {
     const hpPercent = (pokemon.stats.hp / pokemon.stats.maxHp) * 100;
+
+    const initialImg = `/poke/${encodeURIComponent(pokemon.speciesName)}.png`;
+    const candidates = [
+        initialImg,
+        `/poke/${encodeURIComponent(pokemon.speciesName.toLowerCase())}.png`,
+        '/poke/default.png',
+    ];
+    const [imgSrc, setImgSrc] = useState(initialImg);
+
+    useEffect(() => {
+        setImgSrc(initialImg);
+    }, [initialImg]);
 
     return (
         <motion.div 
@@ -30,11 +43,16 @@ export const PokemonCard = ({ pokemon, isActive, isOpponent }: { pokemon: Battle
                     ${pokemon.types.includes('electric') ? 'bg-yellow-500' : ''}
                     bg-gray-500
                 `} />
-                <span className="text-4xl z-10">
-                    {pokemon.speciesName === 'Charizard' ? '🐉' : 
-                     pokemon.speciesName === 'Pikachu' ? '⚡' : 
-                     pokemon.speciesName === 'Blastoise' ? '🐢' : '👾'}
-                </span>
+                <img
+                    src={imgSrc}
+                    alt={pokemon.speciesName}
+                    className="w-20 h-20 z-10 object-contain"
+                    onError={() => {
+                        const idx = candidates.indexOf(imgSrc);
+                        const next = candidates[idx + 1] ?? '/poke/default.png';
+                        if (next !== imgSrc) setImgSrc(next);
+                    }}
+                />
             </div>
 
             {/* HP Bar */}
