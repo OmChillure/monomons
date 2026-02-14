@@ -24,12 +24,12 @@ function LandingPage() {
     },
     {
       id: '2',
-      title: 'Trading Game',
-      description: 'Trade rare items and Pokemon with players worldwide!',
-      icon: '🔄',
+      title: 'Tap Trading',
+      description: 'Predict market moves and win big in this fast-paced trading game!',
+      icon: '📈',
       image: '/trending.png',
-      path: '#',
-      status: 'coming-soon'
+      path: '/tap-trading',
+      status: 'live'
     },
     {
       id: '3',
